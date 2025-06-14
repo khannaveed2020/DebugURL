@@ -923,7 +923,31 @@ function DebugURL {
                 if ($Headers.ContainsKey('Accept')) { $request.Accept = $Headers['Accept']; $Headers.Remove('Accept') }
                 if ($Headers.ContainsKey('User-Agent')) { $request.UserAgent = $Headers['User-Agent']; $Headers.Remove('User-Agent') }
                 if ($Headers.ContainsKey('Referer')) { $request.Referer = $Headers['Referer']; $Headers.Remove('Referer') }
-                if ($Headers.ContainsKey('Date')) { $request.Date = [DateTime]::Parse($Headers['Date']); $Headers.Remove('Date') }
+                # Note: If errors related to 'Cannot bind parameter Date' persist despite the robust parsing below,
+                # consider checking the $PSDefaultParameterValues variable in your session or profile,
+                # e.g., $PSDefaultParameterValues['*:Date'] or $PSDefaultParameterValues['DebugURL:Date'],
+                # as it might be externally influencing parameter binding for 'Date' parameters.
+                if ($Headers.ContainsKey('Date')) {
+                    $dateHeaderValue = $Headers['Date']
+                    $parsedDate = [datetime]::MinValue
+                    $isValidDateTime = $false
+
+                    if ($dateHeaderValue -is [string]) {
+                        if ([datetime]::TryParseExact($dateHeaderValue, "R", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AllowWhiteSpaces, [ref]$parsedDate)) {
+                            $isValidDateTime = $true
+                        }
+                        if (-not $isValidDateTime -and [datetime]::TryParse($dateHeaderValue, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AllowWhiteSpaces, [ref]$parsedDate)) {
+                            $isValidDateTime = $true
+                        }
+                    }
+
+                    if ($isValidDateTime) {
+                        $request.Date = $parsedDate
+                    } else {
+                        Write-Warning "The value '$dateHeaderValue' for the 'Date' header is not a valid DateTime object and will not be set on the HttpWebRequest.Date property. It will be attempted to be sent as a string header if other mechanisms don't prevent it."
+                    }
+                    $Headers.Remove('Date') # Keep this line to prevent it from being added as a regular string header if we attempted to parse it for the .Date property.
+                }
                 if ($Headers.ContainsKey('Host')) { $request.Host = $Headers['Host']; $Headers.Remove('Host') }
                 foreach ($header in $Headers.GetEnumerator()) {
                     Write-Debug "Adding header: $($header.Key) = $($header.Value)"
@@ -1083,6 +1107,10 @@ function DebugURL {
                         $responseHeaders['StatusCode'] = $response.StatusCode
                         $responseHeaders['StatusDescription'] = $response.StatusDescription
 
+                        # FUTURE ENHANCEMENT: The date parsing for response headers (Date, Expires, Last-Modified)
+                        # could be made more robust by using [datetime]::TryParseExact with common HTTP date formats (e.g., "R")
+                        # before falling back to [datetime]::TryParse, similar to how the request Date header is handled.
+                        # This would improve accuracy in converting these headers to DateTime objects for display or further processing.
                         # Process response headers
                         if ($response.Headers) {
                             foreach ($header in $response.Headers.GetEnumerator()) {
@@ -1103,6 +1131,10 @@ function DebugURL {
                         $responseHeaders['StatusCode'] = [int]$response.StatusCode
                         $responseHeaders['StatusDescription'] = $response.StatusDescription
 
+                        # FUTURE ENHANCEMENT: The date parsing for response headers (Date, Expires, Last-Modified)
+                        # could be made more robust by using [datetime]::TryParseExact with common HTTP date formats (e.g., "R")
+                        # before falling back to [datetime]::TryParse, similar to how the request Date header is handled.
+                        # This would improve accuracy in converting these headers to DateTime objects for display or further processing.
                         # Process response headers
                         if ($response.Headers) {
                             foreach ($key in $response.Headers.AllKeys) {
