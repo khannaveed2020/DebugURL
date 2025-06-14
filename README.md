@@ -8,7 +8,7 @@
 A PowerShell module for comprehensive URL testing and debugging, with full support for both PowerShell 5.1 and PowerShell 7+.
 
 ## Version
-1.0.5
+1.0.6
 
 ## Description
 The DebugURL module provides a powerful set of tools for testing and debugging URLs, including DNS resolution, SSL/TLS certificate analysis, request/response header inspection, and performance testing.
@@ -26,7 +26,9 @@ The DebugURL module provides a powerful set of tools for testing and debugging U
 - ✅ Custom user agent setting
 - ✅ HTTP methods (GET, POST, PUT, DELETE, etc.)
 - ✅ Custom headers support
+- ✅ Form data handling with automatic URL encoding
 - ✅ Concurrent requests for performance testing
+- ✅ Cross-version certificate validation (PowerShell 5.1 & 7+)
 - ✅ Actual TLS version detection
 - ✅ Detailed HTTP status code handling and analysis
 - ✅ Comprehensive error reporting with suggested actions
@@ -182,12 +184,54 @@ DebugURL -URL "https://httpbin.org/delete" `
 
 5. Form Data POST
 ```powershell
+# Using FormData parameter (recommended)
+$formData = @{
+    username = "testuser"
+    password = "testpass"
+    email = "test@example.com"
+}
+DebugURL -URL "https://httpbin.org/post" `
+    -Method "POST" `
+    -FormData $formData
+
+# Alternative: Manual form data with Body parameter
 $formData = "field1=value1&field2=value2"
 DebugURL -URL "https://httpbin.org/post" `
     -Method "POST" `
     -Headers @{"Content-Type" = "application/x-www-form-urlencoded"} `
     -Body $formData
 ```
+
+### Form Data Handling
+
+The module provides convenient form data handling with automatic URL encoding and Content-Type setting:
+
+#### Basic Form Data
+```powershell
+$formData = @{
+    username = "testuser"
+    password = "testpass"
+    email = "test@example.com"
+}
+DebugURL -URL "https://httpbin.org/post" -Method "POST" -FormData $formData
+```
+
+#### Form Data with Special Characters
+```powershell
+$formData = @{
+    "field with spaces" = "value with spaces"
+    "special&chars" = "value=with&special=chars"
+    "unicode" = "café"
+    "numbers" = "12345"
+}
+DebugURL -URL "https://httpbin.org/post" -Method "POST" -FormData $formData
+```
+
+**Key Features:**
+- ✅ **Automatic URL Encoding**: Handles special characters, spaces, and Unicode
+- ✅ **Content-Type Setting**: Automatically sets `application/x-www-form-urlencoded`
+- ✅ **Cross-Version Support**: Works in both PowerShell 5.1 and 7+
+- ✅ **Hashtable Input**: Easy-to-use hashtable format
 
 ### Advanced Usage
 
@@ -316,6 +360,7 @@ DebugURL -URL "https://httpbin.org/delay/2" -ConcurrentRequests 5  # Should take
 - `Method`: HTTP method (default: GET)
 - `Headers`: Hashtable of custom headers
 - `Body`: Request body content
+- `FormData`: Hashtable of form data (automatically URL-encoded)
 - `SkipCertCheck`: Skip SSL certificate validation
 - `Timeout`: Request timeout in seconds (default: 30)
 - `Proxy`: Proxy server URL
@@ -344,7 +389,8 @@ Test scenarios completed:
 - ✅ HTTP Methods (GET, POST, PUT, DELETE)
 - ✅ Custom headers
 - ✅ Request/Response body handling
-- ✅ Form data submission
+- ✅ Form data submission (FormData parameter)
+- ✅ URL encoding and special character handling
 - ✅ Concurrent requests (performance testing)
 - ✅ Actual TLS version detection
 - ✅ Parallel job execution and cleanup
@@ -354,6 +400,20 @@ Test APIs Used:
 - httpbin.org (Primary testing)
 - badssl.com (SSL/TLS testing)
 - example.com (Basic connectivity)
+
+## Changelog
+
+### Version 1.0.6
+- ✅ **New Feature**: Added `-FormData` parameter for easy form data submission
+- ✅ **Enhancement**: Automatic URL encoding for form data with special characters
+- ✅ **Bug Fix**: Fixed concurrent requests with `-SkipCertCheck` for both PowerShell 5.1 and 7+
+- ✅ **Improvement**: Enhanced cross-version compatibility for certificate validation
+- ✅ **Enhancement**: Better error handling in concurrent request scenarios
+
+### Version 1.0.5
+- ✅ Fixed concurrent requests timing calculations in PowerShell 5.1
+- ✅ Improved response header handling
+- ✅ Enhanced SSL certificate information display
 
 ## Contributing
 

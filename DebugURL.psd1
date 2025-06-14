@@ -3,7 +3,7 @@
     RootModule = '.\DebugURL.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.5'
+    ModuleVersion = '1.0.6'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Core', 'Desktop')
@@ -63,15 +63,7 @@
     FunctionsToExport = @(
         'DebugURL',
         'Get-DNSCache',
-        'Debug-URLWithProxy',
-        'Debug-URLWithTimeout',
-        'Debug-URLWithMetrics',
-        'Debug-URLWithLoad',
-        'Debug-URLWithTLS',
-        'Debug-URLWithCipher',
-        'Debug-URLWithLogging',
-        'Debug-URLWithUserAgent',
-        'Debug-URLWithResponseAnalysis'
+        'Test-MultipleStatusCodes'
     )
 
     # Cmdlets to export from this module
@@ -103,7 +95,7 @@
             Tags = @('URL', 'Debug', 'Network', 'Testing', 'DNS', 'Performance', 'SSL', 'TLS', 'HTTP', 'HTTPS')
             LicenseUri = 'https://github.com/khannaveed2020/DebugURL/blob/main/LICENSE'
             ProjectUri = 'https://github.com/khannaveed2020/DebugURL'
-            ReleaseNotes = 'Fixed concurrent requests timing calculations in PowerShell 5.1'
+            ReleaseNotes = 'Added FormData parameter support with automatic URL encoding and fixed concurrent requests with SkipCertCheck for both PowerShell 5.1 and 7+'
             Prerelease = ''
             RequireLicenseAcceptance = $false
             ExternalModuleDependencies = @()
@@ -115,35 +107,3 @@
     # HelpInfo URI of this module
     HelpInfoURI = 'https://github.com/khannaveed2020/DebugURL/issues'
 } 
-# SIG # Begin signature block
-# MIIFbQYJKoZIhvcNAQcCoIIFXjCCBVoCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
-# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQULvhPb4s+R76LBvFovVZCggQX
-# zXigggMPMIIDCzCCAfOgAwIBAgIQJgQwjqAm/LBKanySwwIfRTANBgkqhkiG9w0B
-# AQsFADATMREwDwYDVQQDDAhEZWJ1Z1VSTDAeFw0yNTA2MTIxNDE1MzNaFw0zMDA2
-# MTIxNDI1MzJaMBMxETAPBgNVBAMMCERlYnVnVVJMMIIBIjANBgkqhkiG9w0BAQEF
-# AAOCAQ8AMIIBCgKCAQEAoZruS/TeQPApPG5lBBVlSHYnCSP/c47EXkxMDVHSaNLO
-# Wq/Z153KujL30uom6qnmIriiBvEB6DWDoNcAxUXshiHYy+zXyOwts4E3LGmJPthQ
-# bcx+odgbXK0N+YAC4TtkrRudnPdA/3DQGVbZ1HqwnnHcIrwSDFgABCpoBFduPYtV
-# 783soSXgudjrMwanrod47qnvDF9xbjVFwGhjCLicGzkjq/bnhmlv90X17EVBJj+1
-# w3S4Yd3/0AyU9J4wRWb8PoA3QmceYVDltlEH6JQEkJzpZmtWIUzEstwp8yUDMbHL
-# JMFMupeUHOpdL4MJYCWEdlfj6Rfn2XZAwCxxoYRL7QIDAQABo1swWTAOBgNVHQ8B
-# Af8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwMwEwYDVR0RBAwwCoIIRGVidWdV
-# UkwwHQYDVR0OBBYEFM5IJfifmZ+wCzA7yF6SIp+OD4i0MA0GCSqGSIb3DQEBCwUA
-# A4IBAQAfxnq8hJcaou1urLS/x892gRIfE5kr4uZgWwTkR1v4562TgQbsI6FvwDj+
-# 9f/kr5lKWQXnTQ0lKOBnR/5ipAY3e+Ed6mauno0RJKWUYQlueRykGEPd21YtaRVk
-# 2dr8QOt1ZGxLeL07+Xv80tgdQo1BaznytzSGcoNH65QuNrB6A5O2T48eUk8dsLP8
-# Xo3ktPLvnEDrzfxZwbB82kasXZ+peGq51iowaczC0RQuwKn1m0VnDa7tclDihPcb
-# pzGtyZYgHcZW9AElFr3P8Zge+hJv8f1QwhZJh7E8yDNKty1i41Weut3dpYYpY2P9
-# 30OVzYrx+YSO02WAzoWnazobrsdGMYIByDCCAcQCAQEwJzATMREwDwYDVQQDDAhE
-# ZWJ1Z1VSTAIQJgQwjqAm/LBKanySwwIfRTAJBgUrDgMCGgUAoHgwGAYKKwYBBAGC
-# NwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgor
-# BgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG9w0BCQQxFgQUUfHVsrTj
-# DSA9q1DBAythPZUt5/MwDQYJKoZIhvcNAQEBBQAEggEAIa0ql9UXExzDbqD8wyi0
-# VsUidtQOx2NEZjrP8LZeJYcIO7dpyRADMdmUvsxG9ZXjXhITlOp3ZnNvhrRuBwV3
-# 3g+JRZjwuJi2rKGz4zIIBlJSeNgFwgMkt5iYor6hNT8bTp5+2eyLHeHreDBrGWHZ
-# Gov3WMBDtu0Hn+5iH4GulLdk8ZNl0tPD8z5861H6/2PxfV1fCUhvn+GWm55Rjx4E
-# bOtWwjxRb98GNwcsKYr16Fji11fVlBjV/5uAOtgQCUtLDUFDxxyB1mI0F3jvpVr/
-# 3dpnbSRLPuG6v4imwtYEWDq8AcpsEIad1F0wuHpPdP2rPxIVlOeBISueigUyyAbw
-# 4Q==
-# SIG # End signature block

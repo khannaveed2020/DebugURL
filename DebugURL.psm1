@@ -1,6 +1,6 @@
 # DebugURL PowerShell Module
 # Author: Naveed Khan
-# Version: 1.0.5
+# Version: 1.0.6
 # Description: Advanced URL debugging and testing module with comprehensive network analysis capabilities
 # License: MIT License
 # GitHub: https://github.com/khannaveed2020/DebugURL
@@ -26,7 +26,7 @@
     - Concurrent requests for performance testing
 
 .NOTES
-    Version: 1.0.5
+    Version: 1.0.6
     Author: Naveed Khan
     License: MIT License
     GitHub: https://github.com/khannaveed2020/DebugURL
@@ -306,6 +306,19 @@ function Format-ResponseTime {
     return "$([math]::Round($Seconds, 3)) seconds"
 }
 
+function Format-OutputSection {
+    param (
+        [string]$Title,
+        [string]$Content
+    )
+    $separator = "=" * 60
+    Write-Output "`n$separator"
+    Write-Output $Title
+    Write-Output $separator
+    Write-Output $Content
+    Write-Output $separator
+}
+
 function DebugURL {
     <#
     .SYNOPSIS
@@ -332,6 +345,10 @@ function DebugURL {
 
     .PARAMETER Body
         The request body content.
+
+    .PARAMETER FormData
+        A hashtable of form data to be URL-encoded and sent as the request body.
+        Automatically sets Content-Type to application/x-www-form-urlencoded.
 
     .PARAMETER SkipCertCheck
         Skip SSL certificate validation.
@@ -378,6 +395,9 @@ function DebugURL {
         [string]$Body,
 
         [Parameter(Mandatory=$false)]
+        [hashtable]$FormData,
+
+        [Parameter(Mandatory=$false)]
         [switch]$SkipCertCheck,
 
         [Parameter(Mandatory=$false)]
@@ -397,6 +417,9 @@ function DebugURL {
     )
 
     try {
+        # Load System.Web assembly for URL encoding
+        Add-Type -AssemblyName System.Web
+        
         # Initialize timeline tracking and request start time
         $timeline = [ordered]@{
             'DNS Resolution' = 0
@@ -449,6 +472,7 @@ function DebugURL {
                 $logStream.WriteLine("UserAgent: $UserAgent")
                 if ($Proxy) { $logStream.WriteLine("Proxy: $Proxy") }
                 if ($Body) { $logStream.WriteLine("Body: $Body") }
+                if ($FormData) { $logStream.WriteLine("FormData: $($FormData | ConvertTo-Json -Compress)") }
                 $logStream.WriteLine("ConcurrentRequests: $ConcurrentRequests")
                 $logStream.WriteLine("----------------------------------------")
             }
@@ -460,6 +484,24 @@ function DebugURL {
 
         Write-Debug "Starting DebugURL function with URL: $URL"
         Write-Verbose "Initializing request with Method: $Method, Timeout: $Timeout seconds"
+
+        # Process FormData parameter
+        if ($FormData -and -not $Body) {
+            Write-Debug "Converting FormData hashtable to URL-encoded string"
+            $formDataPairs = @()
+            foreach ($key in $FormData.Keys) {
+                $encodedKey = [System.Web.HttpUtility]::UrlEncode($key)
+                $encodedValue = [System.Web.HttpUtility]::UrlEncode($FormData[$key])
+                $formDataPairs += "$encodedKey=$encodedValue"
+            }
+            $Body = $formDataPairs -join '&'
+            
+            # Set appropriate content type if not already set
+            if (-not $Headers.ContainsKey('Content-Type')) {
+                $Headers['Content-Type'] = 'application/x-www-form-urlencoded'
+            }
+            Write-Debug "FormData converted to Body: $Body"
+        }
 
         # Parse URL
         $uri = [System.Uri]$URL
@@ -656,11 +698,12 @@ function DebugURL {
         if ($ConcurrentRequests -gt 1) {
             Write-Verbose "Processing $ConcurrentRequests concurrent requests"
             Write-Debug "Concurrent request parameters - URL: $URL, Method: $Method, Timeout: $Timeout"
-            Write-Output "`n================== Concurrent Requests Summary =================="
-            Write-Output "Concurrent Requests: $ConcurrentRequests"
+            
+            Format-OutputSection -Title "Concurrent Requests Summary" -Content "Concurrent Requests: $ConcurrentRequests"
 
             $jobs = @()
             $startTime = Get-Date
+            $results = @()
 
             # Create and start jobs
             for ($i = 1; $i -le $ConcurrentRequests; $i++) {
@@ -678,7 +721,14 @@ function DebugURL {
                     }
 
                     try {
-                        Write-Debug "Job: Preparing request parameters"
+                        Write-Debug "Job: Preparing request parameters for PowerShell $PSVersion"
+                        
+                        # Handle certificate validation for PowerShell 5.1
+                        if ($SkipCertCheck -and $PSVersion -lt 6) {
+                            Write-Debug "Job: Setting certificate validation callback for PowerShell 5.1"
+                            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+                        }
+                        
                         # Create a clean copy of headers without invalid characters
                         $cleanHeaders = @{}
                         foreach ($key in $Headers.Keys) {
@@ -687,44 +737,120 @@ function DebugURL {
                             }
                         }
 
-                        $requestParams = @{
-                            Uri = $URL
-                            Method = $Method
-                            Headers = $cleanHeaders
-                            UserAgent = $UserAgent
-                            TimeoutSec = $Timeout
-                            ErrorAction = 'Stop'
-                        }
+                        if ($PSVersion -ge 6) {
+                            # PowerShell 7+ handling
+                            Write-Debug "Job: Using PowerShell 7+ Invoke-WebRequest"
+                            $requestParams = @{
+                                Uri = $URL
+                                Method = $Method
+                                Headers = $cleanHeaders
+                                UserAgent = $UserAgent
+                                TimeoutSec = $Timeout
+                                UseBasicParsing = $true
+                                ErrorAction = 'Stop'
+                            }
 
-                        if ($SkipCertCheck) {
-                            Write-Debug "Job: Skipping certificate validation"
-                            $requestParams['SkipCertificateCheck'] = $true
-                        }
+                            if ($SkipCertCheck) {
+                                Write-Debug "Job: Adding SkipCertificateCheck for PowerShell 7+"
+                                $requestParams['SkipCertificateCheck'] = $true
+                            }
 
-                        if ($Proxy) {
-                            Write-Debug "Job: Using proxy: $Proxy"
-                            $requestParams['Proxy'] = $Proxy
-                        }
+                            if ($Proxy) {
+                                Write-Debug "Job: Using proxy: $Proxy"
+                                $requestParams['Proxy'] = $Proxy
+                            }
 
-                        if ($Body) {
-                            Write-Debug "Job: Adding request body"
-                            $requestParams['Body'] = $Body
-                        }
+                            if ($Body) {
+                                Write-Debug "Job: Adding request body"
+                                $requestParams['Body'] = $Body
+                            }
 
-                        Write-Debug "Job: Sending request"
-                        $jobStartTime = Get-Date
-                        $response = Invoke-WebRequest @requestParams
-                        $jobEndTime = Get-Date
+                            Write-Debug "Job: Sending request with PowerShell 7+"
+                            $jobStartTime = Get-Date
+                            $response = Invoke-WebRequest @requestParams
+                            $jobEndTime = Get-Date
+                        } else {
+                            # PowerShell 5.1 handling
+                            Write-Debug "Job: Using PowerShell 5.1 HttpWebRequest"
+                            $request = [System.Net.HttpWebRequest]::Create($URL)
+                            $request.Method = $Method
+                            $request.UserAgent = $UserAgent
+                            $request.Timeout = $Timeout * 1000
+                            $request.AllowAutoRedirect = $false
+
+                            # Set headers
+                            if ($cleanHeaders.ContainsKey('Content-Type')) { $request.ContentType = $cleanHeaders['Content-Type']; $cleanHeaders.Remove('Content-Type') }
+                            if ($cleanHeaders.ContainsKey('Accept')) { $request.Accept = $cleanHeaders['Accept']; $cleanHeaders.Remove('Accept') }
+                            if ($cleanHeaders.ContainsKey('User-Agent')) { $request.UserAgent = $cleanHeaders['User-Agent']; $cleanHeaders.Remove('User-Agent') }
+                            if ($cleanHeaders.ContainsKey('Referer')) { $request.Referer = $cleanHeaders['Referer']; $cleanHeaders.Remove('Referer') }
+                            if ($cleanHeaders.ContainsKey('Host')) { $request.Host = $cleanHeaders['Host']; $cleanHeaders.Remove('Host') }
+                            
+                            foreach ($header in $cleanHeaders.GetEnumerator()) {
+                                Write-Debug "Job: Adding header: $($header.Key) = $($header.Value)"
+                                $request.Headers.Add($header.Key, $header.Value)
+                            }
+
+                            if ($Proxy) {
+                                Write-Debug "Job: Setting up proxy: $Proxy"
+                                $request.Proxy = New-Object System.Net.WebProxy($Proxy)
+                            }
+
+                            if ($Body) {
+                                Write-Debug "Job: Adding request body"
+                                $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
+                                $request.ContentLength = $bodyBytes.Length
+                                $requestStream = $request.GetRequestStream()
+                                $requestStream.Write($bodyBytes, 0, $bodyBytes.Length)
+                                $requestStream.Close()
+                            }
+
+                            Write-Debug "Job: Sending request with PowerShell 5.1"
+                            $jobStartTime = Get-Date
+                            $response = $request.GetResponse()
+                            $jobEndTime = Get-Date
+                        }
 
                         $result.Success = $true
                         $result.Time = ($jobEndTime - $jobStartTime).TotalSeconds
-                        $result.Status = $response.StatusCode
-                        $result.Content = if ($response.Content) { $response.Content } else { "" }
+                        
+                        if ($PSVersion -ge 6) {
+                            $result.Status = $response.StatusCode
+                            $result.Content = if ($response.Content) { $response.Content } else { "" }
+                        } else {
+                            $result.Status = [int]$response.StatusCode
+                            # Get content for PowerShell 5.1
+                            try {
+                                $stream = $response.GetResponseStream()
+                                $reader = New-Object System.IO.StreamReader($stream)
+                                $result.Content = $reader.ReadToEnd()
+                                $reader.Close()
+                                $stream.Close()
+                            } catch {
+                                $result.Content = ""
+                            }
+                        }
+                        
                         Write-Debug "Job: Request completed successfully in $($result.Time) seconds"
                     }
                     catch {
                         Write-Debug "Job: Request failed with error: $($_.Exception.Message)"
                         $result.Error = $_.Exception.Message
+                    }
+                    finally {
+                        # Clean up certificate validation callback for PowerShell 5.1
+                        if ($SkipCertCheck -and $PSVersion -lt 6) {
+                            Write-Debug "Job: Resetting certificate validation callback"
+                            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+                        }
+                        
+                        # Close response for PowerShell 5.1
+                        if ($PSVersion -lt 6 -and $response) {
+                            try {
+                                $response.Close()
+                            } catch {
+                                Write-Debug "Job: Error closing response: $($_.Exception.Message)"
+                            }
+                        }
                     }
 
                     return $result
@@ -741,20 +867,23 @@ function DebugURL {
             $successCount = 0
             $totalTime = 0
             $requestNumber = 1
+            $resultsOutput = ""
 
             foreach ($result in $jobResults) {
                 if ($result.Success) {
                     $successCount++
                     $totalTime += $result.Time
-                    Write-Output "Request $requestNumber`: Success, Time: $(Format-ResponseTime -Seconds $result.Time), Status: $($result.Status)"
+                    $resultsOutput += "Request $requestNumber`: Success, Time: $(Format-ResponseTime -Seconds $result.Time), Status: $($result.Status)`n"
                     Write-Debug "Request $requestNumber details - Time: $($result.Time)s, Status: $($result.Status)"
                 }
                 else {
-                    Write-Output "Request $requestNumber`: Fail, Time: $(Format-ResponseTime -Seconds $result.Time), Status: N/A - $($result.Error)"
+                    $resultsOutput += "Request $requestNumber`: Fail, Time: $(Format-ResponseTime -Seconds $result.Time), Status: N/A - $($result.Error)`n"
                     Write-Debug "Request $requestNumber failed - Error: $($result.Error)"
                 }
                 $requestNumber++
             }
+
+            Write-Output $resultsOutput
 
             if ($successCount -gt 0) {
                 $avgTime = $totalTime / $successCount
@@ -772,13 +901,18 @@ function DebugURL {
                     if ($time -lt $minTime) { $minTime = $time }
                     if ($time -gt $maxTime) { $maxTime = $time }
                 }
-                Write-Output "Response Time Statistics:"
-                Write-Output "  Average: $(Format-ResponseTime -Seconds $avgTime)"
-                Write-Output "  Minimum: $(Format-ResponseTime -Seconds $minTime)"
-                Write-Output "  Maximum: $(Format-ResponseTime -Seconds $maxTime)"
+                
+                $statsOutput = "Response Time Statistics:`n"
+                $statsOutput += "  Average: $(Format-ResponseTime -Seconds $avgTime)`n"
+                $statsOutput += "  Minimum: $(Format-ResponseTime -Seconds $minTime)`n"
+                $statsOutput += "  Maximum: $(Format-ResponseTime -Seconds $maxTime)`n"
+                
+                Write-Output $statsOutput
                 Write-Debug "Concurrent requests summary - Success: $successCount/$ConcurrentRequests, Avg Time: $avgTime s"
             }
-            Write-Output "$successCount of $ConcurrentRequests requests succeeded."
+            
+            $summaryOutput = "$successCount of $ConcurrentRequests requests succeeded."
+            Write-Output $summaryOutput
             return
         } else {
             Write-Verbose "Processing single request"
@@ -876,13 +1010,15 @@ function DebugURL {
                         $timeTaken = ($requestEndTime - $startTime).TotalSeconds
                         $timeline['Total Time'] = $timeTaken
 
-                        # Display timeline before throwing the error
+                        # Display timeline before showing the error
                         Write-Output "=================== Request Timeline ==================="
                         $timelineObj = New-Object PSObject -Property $timeline
                         Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
                         Write-Output ""
 
-                        Write-Error "HTTP Error $statusCode - $($statusInfo.Description)" -ErrorAction Stop
+                        # Instead of Write-Error, use Write-Warning for HTTP errors
+                        Write-Warning "HTTP Error $statusCode - $($statusInfo.Description)"
+                        return
                     }
                     else {
                         # Update timeline before error
@@ -891,7 +1027,7 @@ function DebugURL {
                         $timeTaken = ($requestEndTime - $startTime).TotalSeconds
                         $timeline['Total Time'] = $timeTaken
 
-                        # Display timeline before throwing the error
+                        # Display timeline before showing the error
                         Write-Output "=================== Request Timeline ==================="
                         $timelineObj = New-Object PSObject -Property $timeline
                         Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
@@ -1039,13 +1175,15 @@ function DebugURL {
                         $timeTaken = ($requestEndTime - $startTime).TotalSeconds
                         $timeline['Total Time'] = $timeTaken
 
-                        # Display timeline before throwing the error
+                        # Display timeline before showing the error
                         Write-Output "=================== Request Timeline ==================="
                         $timelineObj = New-Object PSObject -Property $timeline
                         Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
                         Write-Output ""
 
-                        Write-Error "HTTP Error $statusCode - $($statusInfo.Description)" -ErrorAction Stop
+                        # Instead of Write-Error, use Write-Warning for HTTP errors
+                        Write-Warning "HTTP Error $statusCode - $($statusInfo.Description)"
+                        return
                     }
                     throw
                 }
@@ -1189,7 +1327,7 @@ function DebugURL {
             $timeTaken = ($requestEndTime - $startTime).TotalSeconds
             $timeline['Total Time'] = $timeTaken
 
-            # Display timeline before throwing the error
+            # Display timeline before showing the error
             Write-Output "=================== Request Timeline ==================="
             $timelineObj = New-Object PSObject -Property $timeline
             Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
@@ -1201,7 +1339,8 @@ function DebugURL {
                 'Type' = Get-ErrorClassification -ErrorMessage $_.Exception.Message
             }
 
-            Write-Error $_.Exception.Message
+            # Instead of Write-Error, use Write-Warning for HTTP errors
+            Write-Warning $_.Exception.Message
         }
         return
     } finally {
@@ -1269,4 +1408,16 @@ function Get-DNSCache {
     }
 }
 
-Export-ModuleMember -Function DebugURL, Get-DNSCache
+function Test-MultipleStatusCodes {
+    param (
+        [int[]]$StatusCodes = @(200, 301, 400, 401, 403, 404, 500, 503)
+    )
+    
+    foreach ($code in $StatusCodes) {
+        Format-OutputSection -Title "Testing Status Code: $code" -Content ""
+        DebugURL -URL "http://httpbin.org/status/$code"
+        Start-Sleep -Milliseconds 500  # Add small delay between requests
+    }
+}
+
+Export-ModuleMember -Function DebugURL, Get-DNSCache, Test-MultipleStatusCodes
