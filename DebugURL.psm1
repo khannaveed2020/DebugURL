@@ -263,7 +263,7 @@ function Get-SSLCertificate {
     }
     catch {
         Write-Verbose "SSL Certificate Error: $($_.Exception.Message)"
-        Write-Debug "Detailed error: $($_.Exception | ConvertTo-Json -Depth 10)"
+        Write-Debug "Detailed error: $($_.Exception.Message) - Type: $($_.Exception.GetType().Name)"
         return $null
     }
     finally {
@@ -460,25 +460,31 @@ function DebugURL {
                 $logStream.WriteLine("URL: $URL")
                 $logStream.WriteLine("Method: $Method")
                 
-                # Convert headers to a serializable format
-                $headerObj = @{}
+                # Convert headers to a simple string format to avoid JSON serialization issues
+                $headerStr = ""
                 foreach ($key in $Headers.Keys) {
-                    $headerObj[$key.ToString()] = $Headers[$key].ToString()
+                    $headerStr += "$($key.ToString())=$($Headers[$key].ToString()); "
                 }
-                $logStream.WriteLine("Headers: $($headerObj | ConvertTo-Json -Compress)")
+                $logStream.WriteLine("Headers: $headerStr")
                 
                 $logStream.WriteLine("Timeout: $Timeout seconds")
                 $logStream.WriteLine("SkipCertCheck: $SkipCertCheck")
                 $logStream.WriteLine("UserAgent: $UserAgent")
                 if ($Proxy) { $logStream.WriteLine("Proxy: $Proxy") }
                 if ($Body) { $logStream.WriteLine("Body: $Body") }
-                if ($FormData) { $logStream.WriteLine("FormData: $($FormData | ConvertTo-Json -Compress)") }
+                if ($FormData) { 
+                    $formDataStr = ""
+                    foreach ($key in $FormData.Keys) {
+                        $formDataStr += "$($key.ToString())=$($FormData[$key].ToString()); "
+                    }
+                    $logStream.WriteLine("FormData: $formDataStr")
+                }
                 $logStream.WriteLine("ConcurrentRequests: $ConcurrentRequests")
                 $logStream.WriteLine("----------------------------------------")
             }
             catch {
                 Write-Warning "Failed to initialize logging: $($_.Exception.Message)"
-                Write-Debug "Log initialization error: $($_.Exception | ConvertTo-Json -Depth 3)"
+                Write-Debug "Log initialization error: $($_.Exception.Message) - Type: $($_.Exception.GetType().Name)"
             }
         }
 
@@ -521,21 +527,13 @@ function DebugURL {
             $dnsResult = Resolve-DnsName -Name $uri.Host -ErrorAction Stop
             $dnsEndTime = Get-Date
             $timeline['DNS Resolution'] = ($dnsEndTime - $dnsStartTime).TotalSeconds
-            if ($logStream) {
-                $logStream.WriteLine("DNS Resolution Results:")
-                # Convert DNS results to a serializable format
-                $dnsObj = @{}
-                foreach ($record in $dnsResult) {
-                    $dnsObj[$record.Name] = @{
-                        'Type' = $record.Type
-                        'IPAddress' = $record.IPAddress
-                        'TTL' = $record.TTL
+                            if ($logStream) {
+                    $logStream.WriteLine("DNS Resolution Results:")
+                    foreach ($record in $dnsResult) {
+                        $logStream.WriteLine("  Name=$($record.Name), Type=$($record.Type), IPAddress=$($record.IPAddress), TTL=$($record.TTL)")
                     }
+                    $logStream.WriteLine("DNS Resolution Time: $($timeline['DNS Resolution']) seconds")
                 }
-                $dnsJson = $dnsObj | ConvertTo-Json -Compress
-                $logStream.WriteLine($dnsJson)
-                $logStream.WriteLine("DNS Resolution Time: $($timeline['DNS Resolution']) seconds")
-            }
             $dnsTable = $dnsResult | Format-Table Name, Type, IPAddress, QueryType, Section | Out-String
             Write-Output "==================== DNS Resolution ===================="
             Write-Output $dnsTable.TrimEnd()
@@ -598,15 +596,18 @@ function DebugURL {
             Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
             Write-Output ""
 
-            if ($logStream) {
-                $logStream.WriteLine("DNS Resolution Error:")
-                $logStream.WriteLine("  Error: $($_.Exception.Message)")
-                $logStream.WriteLine("  Type: $(Get-ErrorClassification -ErrorMessage $_.Exception.Message)")
-                $logStream.WriteLine("  DNS Servers: $($errorDetails.DNS_Servers -join ', ')")
-                if ($cacheEntries) {
-                    $logStream.WriteLine("  Cache Entries: $($cacheEntries | ConvertTo-Json -Compress)")
+                            if ($logStream) {
+                    $logStream.WriteLine("DNS Resolution Error:")
+                    $logStream.WriteLine("  Error: $($_.Exception.Message)")
+                    $logStream.WriteLine("  Type: $(Get-ErrorClassification -ErrorMessage $_.Exception.Message)")
+                    $logStream.WriteLine("  DNS Servers: $($errorDetails.DNS_Servers -join ', ')")
+                    if ($cacheEntries) {
+                        $logStream.WriteLine("  Cache Entries:")
+                        foreach ($entry in $cacheEntries) {
+                            $logStream.WriteLine("    Entry=$($entry.Entry), Record=$($entry.Record), Data=$($entry.Data), TTL=$($entry.TTL)")
+                        }
+                    }
                 }
-            }
 
             # Set a flag to indicate we've already handled the error
             $script:errorHandled = $true
@@ -636,13 +637,8 @@ function DebugURL {
                     'Type' = Get-ErrorClassification -ErrorMessage $_.Exception.Message
                 }
 
-                if ($PSVersionTable.PSVersion.Major -ge 6) {
-                    Write-Warning "SSL Certificate Error: Unable to retrieve certificate for '$($uri.Host)'"
-                    Write-Debug ($errorDetails | ConvertTo-Json -Depth 3)
-                } else {
-                    Write-Warning "SSL Certificate Error: Unable to retrieve certificate for '$($uri.Host)'"
-                    Write-Debug "Error Details: $($errorDetails | ConvertTo-Json -Depth 3)"
-                }
+                Write-Warning "SSL Certificate Error: Unable to retrieve certificate for '$($uri.Host)'"
+                Write-Debug "Error Details: Hostname=$($errorDetails.Hostname), Error=$($errorDetails.Error), Type=$($errorDetails.Type)"
             }
         }
 
@@ -703,8 +699,6 @@ function DebugURL {
 
             $jobs = @()
             $startTime = Get-Date
-            $results = @()
-
             # Create and start jobs
             for ($i = 1; $i -le $ConcurrentRequests; $i++) {
                 Write-Debug "Starting job $i of $ConcurrentRequests"
@@ -834,7 +828,13 @@ function DebugURL {
                     }
                     catch {
                         Write-Debug "Job: Request failed with error: $($_.Exception.Message)"
-                        $result.Error = $_.Exception.Message
+                        # Handle SSL/Certificate errors specifically for PowerShell 7+ in concurrent jobs
+                        if ($PSVersion -ge 6 -and ($_.Exception.Message -match "certificate|ssl|tls|authentication" -or 
+                            $_.Exception.GetType().Name -match "HttpRequestException|AuthenticationException")) {
+                            $result.Error = "SSL Certificate Error: $($_.Exception.Message)"
+                        } else {
+                            $result.Error = $_.Exception.Message
+                        }
                     }
                     finally {
                         # Clean up certificate validation callback for PowerShell 5.1
@@ -856,7 +856,7 @@ function DebugURL {
                     return $result
                 }
 
-                $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $URL, $Method, $requestHeaders, $UserAgent, $Timeout, $SkipCertCheck, $Proxy, $Body, $PSVersionTable.PSVersion.Major
+                $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $URL, $Method, $Headers, $UserAgent, $Timeout, $SkipCertCheck, $Proxy, $Body, $PSVersionTable.PSVersion.Major
             }
 
             Write-Verbose "Waiting for all jobs to complete"
@@ -937,7 +937,7 @@ function DebugURL {
                     Write-Debug "Adding request body"
                     $webRequestParams['Body'] = $Body
                 }
-                Write-Verbose "Sending request with parameters: $($webRequestParams | ConvertTo-Json)"
+                Write-Verbose "Sending request with parameters: Method=$Method, URI=$URL, Timeout=$Timeout"
                 try {
                     $tcpStartTime = Get-Date
                     $response = Invoke-WebRequest @webRequestParams
@@ -946,7 +946,46 @@ function DebugURL {
                     $timeline['Response Wait'] = ($tcpEndTime - $tcpStartTime).TotalSeconds
                 }
                 catch {
-                    if ($_.Exception.Response) {
+                    # Handle PowerShell 7+ specific exception types
+                    $requestEndTime = Get-Date
+                    $timeline['Request Send'] = ($requestEndTime - $requestStartTime).TotalSeconds
+                    $timeTaken = ($requestEndTime - $startTime).TotalSeconds
+                    $timeline['Total Time'] = $timeTaken
+
+                    # Check for SSL/Certificate errors first
+                    if ($_.Exception.Message -match "certificate|ssl|tls|authentication" -or 
+                        $_.Exception.GetType().Name -match "HttpRequestException|AuthenticationException") {
+                        
+                        Write-Output "=================== SSL/Certificate Error ==================="
+                        Write-Output "Error Type: SSL/TLS Certificate Error"
+                        Write-Output "Description: The SSL certificate validation failed"
+                        Write-Output "Error Message: $($_.Exception.Message)"
+                        Write-Output ""
+                        Write-Output "Troubleshooting Suggestions:"
+                        Write-Output "  1. The SSL certificate may be expired, invalid, or self-signed"
+                        Write-Output "  2. Use -SkipCertCheck parameter to bypass certificate validation for testing"
+                        Write-Output "  3. Verify the certificate is properly configured on the server"
+                        Write-Output "  4. Check if the certificate chain is complete"
+                        Write-Output "  Example: DebugURL -URL '$URL' -SkipCertCheck"
+                        Write-Output ""
+
+                        # Display timeline
+                        Write-Output "=================== Request Timeline ==================="
+                        $timelineObj = New-Object PSObject -Property $timeline
+                        Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
+                        Write-Output ""
+
+                        if ($logStream) {
+                            $logStream.WriteLine("SSL/Certificate Error:")
+                            $logStream.WriteLine("  Error: $($_.Exception.Message)")
+                            $logStream.WriteLine("  Type: SSL/TLS Certificate Error")
+                        }
+
+                        Write-Warning "SSL Certificate validation failed"
+                        return
+                    }
+                    # Handle HTTP response errors
+                    elseif ($_.Exception.Response) {
                         $statusCode = [int]$_.Exception.Response.StatusCode
                         $statusInfo = Get-HTTPStatusInfo -StatusCode $statusCode
 
@@ -961,31 +1000,17 @@ function DebugURL {
                         if ($_.Exception.Response) {
                             Write-Output "Response Headers:"
                             try {
-                                if ($PSVersionTable.PSVersion.Major -ge 6) {
-                                    $response = $_.Exception.Response
-                                    $headers = @{}
-                                    foreach ($header in $response.Headers.GetEnumerator()) {
-                                        $headers[$header.Key] = $header.Value
-                                    }
-                                    foreach ($key in $headers.Keys) {
-                                        Write-Output "  $key : $($headers[$key])"
-                                    }
-                                } else {
-                                    $response = $_.Exception.Response
-                                    $headers = @{}
-                                    foreach ($key in $response.Headers.AllKeys) {
-                                        $headers[$key] = $response.Headers[$key]
-                                    }
-                                    foreach ($key in $headers.Keys) {
-                                        Write-Output "  $key : $($headers[$key])"
-                                    }
+                                $response = $_.Exception.Response
+                                $headers = @{}
+                                foreach ($header in $response.Headers.GetEnumerator()) {
+                                    $headers[$header.Key] = $header.Value
+                                }
+                                foreach ($key in $headers.Keys) {
+                                    Write-Output "  $key : $($headers[$key])"
                                 }
                             }
                             catch {
                                 Write-Debug "Error accessing response headers: $($_.Exception.Message)"
-                                Write-Debug "Exception type: $($_.Exception.GetType().FullName)"
-                                Write-Debug "Stack trace: $($_.ScriptStackTrace)"
-
                                 # Try alternative method
                                 try {
                                     $response = $_.Exception.Response
@@ -1000,38 +1025,35 @@ function DebugURL {
                                 }
                             }
                             Write-Output ""
-                        } else {
-                            Write-Debug "No response object available"
                         }
 
-                        # Update timeline before error
-                        $requestEndTime = Get-Date
-                        $timeline['Request Send'] = ($requestEndTime - $requestStartTime).TotalSeconds
-                        $timeTaken = ($requestEndTime - $startTime).TotalSeconds
-                        $timeline['Total Time'] = $timeTaken
-
-                        # Display timeline before showing the error
+                        # Display timeline
                         Write-Output "=================== Request Timeline ==================="
                         $timelineObj = New-Object PSObject -Property $timeline
                         Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
                         Write-Output ""
 
-                        # Instead of Write-Error, use Write-Warning for HTTP errors
+                        if ($logStream) {
+                            $logStream.WriteLine("HTTP Error:")
+                            $logStream.WriteLine("  Status Code: $statusCode")
+                            $logStream.WriteLine("  Error: $($_.Exception.Message)")
+                        }
+
                         Write-Warning "HTTP Error $statusCode - $($statusInfo.Description)"
                         return
                     }
                     else {
-                        # Update timeline before error
-                        $requestEndTime = Get-Date
-                        $timeline['Request Send'] = ($requestEndTime - $requestStartTime).TotalSeconds
-                        $timeTaken = ($requestEndTime - $startTime).TotalSeconds
-                        $timeline['Total Time'] = $timeTaken
-
                         # Display timeline before showing the error
                         Write-Output "=================== Request Timeline ==================="
                         $timelineObj = New-Object PSObject -Property $timeline
                         Write-Output ($timelineObj | Format-List | Out-String).TrimEnd()
                         Write-Output ""
+                        
+                        if ($logStream) {
+                            $logStream.WriteLine("General Error:")
+                            $logStream.WriteLine("  Error: $($_.Exception.Message)")
+                            $logStream.WriteLine("  Type: $($_.Exception.GetType().Name)")
+                        }
                         
                         throw
                     }
@@ -1316,7 +1338,8 @@ function DebugURL {
             $logStream.WriteLine("Error Occurred:")
             $logStream.WriteLine("  Message: $($_.Exception.Message)")
             $logStream.WriteLine("  Type: $(Get-ErrorClassification -ErrorMessage $_.Exception.Message)")
-            $logStream.WriteLine("  Stack Trace: $($_.ScriptStackTrace)")
+            # Avoid deep JSON serialization issues by limiting stack trace info
+            $logStream.WriteLine("  Error Type: $($_.Exception.GetType().Name)")
         }
 
         # Only display timeline and error if not already handled
