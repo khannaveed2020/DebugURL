@@ -29,7 +29,6 @@ The DebugURL module provides a powerful set of tools for testing and debugging U
 - ✅ Form data handling with automatic URL encoding
 - ✅ Concurrent requests for performance testing
 - ✅ Cross-version certificate validation (PowerShell 5.1 & 7+)
-- ✅ Actual TLS version detection
 - ✅ Detailed HTTP status code handling and analysis
 - ✅ Comprehensive error reporting with suggested actions
 
@@ -391,7 +390,6 @@ Test scenarios completed:
 - ✅ Form data submission (FormData parameter)
 - ✅ URL encoding and special character handling
 - ✅ Concurrent requests (performance testing)
-- ✅ Actual TLS version detection
 - ✅ Parallel job execution and cleanup
 - ✅ Error handling in concurrent mode
 
