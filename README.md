@@ -365,7 +365,6 @@ DebugURL -URL "https://httpbin.org/delay/2" -ConcurrentRequests 5  # Should take
 - `Timeout`: Request timeout in seconds (default: 30)
 - `Proxy`: Proxy server URL
 - `UserAgent`: Custom User-Agent string
-- `TLSVersion`: Specify TLS version
 - `LogPath`: Path for detailed logging
 - `ConcurrentRequests`: Number of concurrent requests (default: 1)
 
